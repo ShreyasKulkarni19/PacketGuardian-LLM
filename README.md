@@ -4,18 +4,10 @@ The fast-paced evolution of cyber threats poses significant challenges in the fi
 In this project, we present PacketGuardian-LLM, a proof of concept network packet analyzer that uses pre-trained generative models via API’s to detect SQL injections, XSS, and command injection attacks within HTTP traffic captured using tools like Wireshark and stored as PCAP files. Unlike the conventional systems, PacketGuardian-LLM uses rule-based preprocessing along with LLM-driven analysis to examine the payload and the header. By analyzing Wireshark logs, the approach identifies malicious patterns while giving a good explanation, making it easier to analyze the threats. The work is intended to demonstrate the potential of LLMs to augment network security, improving the automated threat detection in a fast changing digital landscape.
 
 
-Project Schedule
-        Planning and Setup
-Initial Planning
-Data and project design
-        Mar 25, 2025
-        Core development
-Payload analysis
-Header analysis
-Preprocessing layer
-        Apr 17, 2025
-        Testing and Demo preparation
-        Apr 29, 2025
+-- Project Schedule --
+Mar 25, 2025 (Planning and Setup): Initial Planning, Data and project design
+Apr 17, 2025 (Core development): Payload analysis, Header analysis, Preprocessing layer
+Apr 29, 2025: Testing and Demo preparation
 
 
 References
