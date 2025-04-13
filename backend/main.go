@@ -5,14 +5,20 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"github.com/rs/cors"
 )
 
 func main() {
+	mux := http.NewServeMux()
+	
 	// Define the upload endpoint
-	http.HandleFunc("/upload", handlers.UploadHandler)
+	mux.HandleFunc("/upload", handlers.UploadHandler)
+
+	// Enable CORS
+	handler := cors.Default().Handler(mux)
 
 	// Start the server
 	port := ":8080"
 	fmt.Printf("Server running on port %s\n", port)
-	log.Fatal(http.ListenAndServe(port, nil))
+	log.Fatal(http.ListenAndServe(port, handler))
 }
