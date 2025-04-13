@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"PacketGuardian-LLM/backend/utils"
+	"PacketGuardian-LLM/backend/utils" 
 	"fmt"
 	"io"
 	"net/http"
@@ -57,7 +57,7 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Placeholder for processing
+	// Real processing
 	result := utils.ProcessPCAP(tempFile.Name())
 
 	// Send response
