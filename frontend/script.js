@@ -25,6 +25,7 @@ document.getElementById("uploadForm").addEventListener("submit", async (e) => {
     const response = await fetch("http://localhost:8080/upload", {
       method: "POST",
       body: formData,
+      timeout: 60000,
     });
 
     const data = await response.json();
