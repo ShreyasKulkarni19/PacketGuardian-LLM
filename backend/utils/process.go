@@ -1,15 +1,27 @@
 package utils
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"log"
+	"os"
+	"strings"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
+	"github.com/joho/godotenv"
+	"github.com/sashabaranov/go-openai"
 )
 
 // ProcessPCAP processes the PCAP file to detect potential threats
 func ProcessPCAP(pcapFile string) string {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("Recovered from panic in ProcessPCAP: %v\n", r)
+		}
+	}()
 	if pcapFile == "" {
 		return "Error: PCAP file path is empty"
 	}
@@ -52,9 +64,100 @@ func ProcessPCAP(pcapFile string) string {
 
 	if len(detectedThreats) > 0 {
 		uniqueThreats := removeDuplicates(detectedThreats)
-		return fmt.Sprintf("Processed %d packets and detected threats: %s", packetCount, formatThreats(uniqueThreats))
+		analysis := analyze(pcapFile, uniqueThreats)
+		return fmt.Sprintf("Processed %d packets and detected threats: %s\n\nAnalysis:\n%s", packetCount, formatThreats(uniqueThreats), analysis)
 	}
 	return fmt.Sprintf("Processed %d packets, no threats detected", packetCount)
+}
+
+func analyze(pcapFile string, threats []string) string {
+	readableData, err := convertPCAPToReadableFormat(pcapFile)
+	if err != nil {
+		return fmt.Sprintf("Error converting PCAP file: %v", err)
+	}
+
+	// Perform OpenAI analysis asynchronously
+	go func() {
+		analysis := analyzeWithOpenAI(readableData, threats)
+		fmt.Println("Threat analysis completed:", analysis)
+	}()
+
+	return "File uploaded and processing started"
+}
+
+func convertPCAPToReadableFormat(pcapFile string) (string, error) {
+	handle, err := pcap.OpenOffline(pcapFile)
+	if err != nil {
+		return "", fmt.Errorf("error opening pcap file: %v", err)
+	}
+	defer handle.Close()
+
+	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+	var packets []map[string]interface{}
+
+	for packet := range packetSource.Packets() {
+		packetInfo := map[string]interface{}{
+			"timestamp": packet.Metadata().Timestamp.String(),
+			"layers":    []string{},
+		}
+
+		for _, layer := range packet.Layers() {
+			packetInfo["layers"] = append(packetInfo["layers"].([]string), layer.LayerType().String())
+		}
+
+		if applicationLayer := packet.ApplicationLayer(); applicationLayer != nil {
+			packetInfo["payload"] = string(applicationLayer.Payload())
+		}
+
+		packets = append(packets, packetInfo)
+	}
+
+	jsonData, err := json.MarshalIndent(packets, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("error converting packets to JSON: %v", err)
+	}
+
+	return string(jsonData), nil
+}
+
+// Analyze the readable data using OpenAI API
+func analyzeWithOpenAI(data string, threats []string) string {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatalf("Error loading .env file: %v", err)
+	}
+	apiKey := os.Getenv("OPENAI_API_KEY")
+
+	if apiKey == "" {
+		return "Error: OpenAI API key not set"
+	}
+	fmt.Println("OpenAI API Key loaded successfully")
+
+	client := openai.NewClient(apiKey)
+	ctx := context.Background()
+
+	prompt := fmt.Sprintf("Analyze the following network traffic data and explain the detected threats (%s), their causes, and resolutions:\n\n%s", strings.Join(threats, ", "), data)
+
+	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+		Model: openai.GPT4, // Use GPT-4 for better analysis
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleSystem,
+				Content: "You are a cybersecurity expert.",
+			},
+			{
+				Role:    openai.ChatMessageRoleUser,
+				Content: prompt,
+			},
+		},
+	})
+
+	if err != nil {
+		fmt.Printf("Error analyzing data with OpenAI: %v\n", err)
+		return fmt.Sprintf("Error analyzing data with OpenAI: %v", err)
+	}
+
+	return resp.Choices[0].Message.Content
 }
 
 // Helper function to format the list of detected threats
@@ -138,6 +241,10 @@ func detectDoS(packet gopacket.Packet) bool {
 	if tcpLayer.SYN && !tcpLayer.ACK {
 		srcIP := ipLayer.SrcIP.String()
 		synCounts[srcIP]++
+
+		if synCounts[srcIP]%100 == 0 {
+			fmt.Printf("Potential SYN flood DoS attack from: %s (SYN count: %d)\n", srcIP, synCounts[srcIP])
+		}
 
 		if synCounts[srcIP] > synThreshold {
 			fmt.Printf("Potential SYN flood DoS attack from: %s (SYN count: %d)\n", srcIP, synCounts[srcIP])
