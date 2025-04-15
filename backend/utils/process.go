@@ -2,10 +2,10 @@ package utils
 
 import (
 	"fmt"
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/pcap"
-	"github.com/google/gopacket/layers"
 
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcap"
 )
 
 // ProcessPCAP processes the PCAP file to detect potential threats
@@ -26,34 +26,53 @@ func ProcessPCAP(pcapFile string) string {
 
 	// Initialize threat detection variables
 	var packetCount int
-	var threatDetected bool
+	var detectedThreats []string // To store the types of threats detected
 
 	for packet := range packetSource.Packets() {
 		packetCount++
 		if detectSQLInjection(packet) {
-			threatDetected = true
+			detectedThreats = append(detectedThreats, "SQL Injection")
 		}
 		if detectXSS(packet) {
-			threatDetected = true
+			detectedThreats = append(detectedThreats, "Cross-Site Scripting (XSS)")
 		}
 		if detectDoS(packet) {
-			threatDetected = true
+			detectedThreats = append(detectedThreats, "Denial of Service (DoS)")
 		}
 		if detectMalware(packet) {
-			threatDetected = true
+			detectedThreats = append(detectedThreats, "Malware")
 		}
 		if detectPhishing(packet) {
-			threatDetected = true
+			detectedThreats = append(detectedThreats, "Phishing")
 		}
 		if detectBruteForce(packet) {
-			threatDetected = true
+			detectedThreats = append(detectedThreats, "Brute Force Attack")
 		}
 	}
 
-	if threatDetected {
-		return fmt.Sprintf("Processed %d packets and detected threats", packetCount)
+	if len(detectedThreats) > 0 {
+		uniqueThreats := removeDuplicates(detectedThreats)
+		return fmt.Sprintf("Processed %d packets and detected threats: %s", packetCount, formatThreats(uniqueThreats))
 	}
 	return fmt.Sprintf("Processed %d packets, no threats detected", packetCount)
+}
+
+// Helper function to format the list of detected threats
+func formatThreats(threats []string) string {
+	return fmt.Sprintf("%v", threats)
+}
+
+// Helper function to remove duplicate threat types
+func removeDuplicates(threats []string) []string {
+	seen := make(map[string]bool)
+	var unique []string
+	for _, threat := range threats {
+		if !seen[threat] {
+			seen[threat] = true
+			unique = append(unique, threat)
+		}
+	}
+	return unique
 }
 
 // SQL Injection Detection
@@ -95,6 +114,7 @@ func detectXSS(packet gopacket.Packet) bool {
 // Denial of Service (DoS) Detection
 // A map to track SYN packet counts per source IP
 var synCounts = make(map[string]int)
+
 const synThreshold = 100 // You can adjust this based on your sensitivity needs
 
 func detectDoS(packet gopacket.Packet) bool {
