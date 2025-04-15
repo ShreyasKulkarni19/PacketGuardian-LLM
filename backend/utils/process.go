@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/google/gopacket"
@@ -76,14 +77,59 @@ func analyze(pcapFile string, threats []string) string {
 		return fmt.Sprintf("Error converting PCAP file: %v", err)
 	}
 
-	// Perform OpenAI analysis asynchronously
-	go func() {
-		analysis := analyzeWithOpenAI(readableData, threats)
-		fmt.Println("Threat analysis completed:", analysis)
-	}()
+	// Process the saved chunks for analysis synchronously
+	analysisResults := processChunksForAnalysis(threats)
+	fmt.Println("Threat analysis completed:\n", analysisResults)
 
-	return "File uploaded and processing started"
+	// Include readableData and analysisResults in the response
+	return fmt.Sprintf("File uploaded and processing completed. Readable data:\n%s\n\nAnalysis Results:\n%s", readableData, analysisResults)
 }
+func splitData(data []map[string]interface{}, chunkSize int) [][]map[string]interface{} {
+	var chunks [][]map[string]interface{}
+	for i := 0; i < len(data); i += chunkSize {
+		end := i + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		chunks = append(chunks, data[i:end])
+	}
+	return chunks
+}
+
+// func convertPCAPToReadableFormat(pcapFile string) (string, error) {
+// 	handle, err := pcap.OpenOffline(pcapFile)
+// 	if err != nil {
+// 		return "", fmt.Errorf("error opening pcap file: %v", err)
+// 	}
+// 	defer handle.Close()
+
+// 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+// 	var packets []map[string]interface{}
+
+// 	for packet := range packetSource.Packets() {
+// 		packetInfo := map[string]interface{}{
+// 			"timestamp": packet.Metadata().Timestamp.String(),
+// 			"layers":    []string{},
+// 		}
+
+// 		for _, layer := range packet.Layers() {
+// 			packetInfo["layers"] = append(packetInfo["layers"].([]string), layer.LayerType().String())
+// 		}
+
+// 		if applicationLayer := packet.ApplicationLayer(); applicationLayer != nil {
+// 			packetInfo["payload"] = string(applicationLayer.Payload())
+// 		}
+
+// 		packets = append(packets, packetInfo)
+// 	}
+
+// 	jsonData, err := json.MarshalIndent(packets, "", "  ")
+// 	if err != nil {
+// 		return "", fmt.Errorf("error converting packets to JSON: %v", err)
+// 	}
+
+// 	return string(jsonData), nil
+// }
 
 func convertPCAPToReadableFormat(pcapFile string) (string, error) {
 	handle, err := pcap.OpenOffline(pcapFile)
@@ -93,35 +139,76 @@ func convertPCAPToReadableFormat(pcapFile string) (string, error) {
 	defer handle.Close()
 
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
-	var packets []map[string]interface{}
+	var maliciousPackets []map[string]interface{}
 
 	for packet := range packetSource.Packets() {
-		packetInfo := map[string]interface{}{
-			"timestamp": packet.Metadata().Timestamp.String(),
-			"layers":    []string{},
-		}
+		// Check if the packet is malicious using detection functions
+		if detectSQLInjection(packet) || detectXSS(packet) || detectDoS(packet) ||
+			detectMalware(packet) || detectPhishing(packet) || detectBruteForce(packet) {
 
-		for _, layer := range packet.Layers() {
-			packetInfo["layers"] = append(packetInfo["layers"].([]string), layer.LayerType().String())
-		}
+			// Extract packet information
+			packetInfo := map[string]interface{}{
+				"timestamp": packet.Metadata().Timestamp.String(),
+				"layers":    []string{},
+			}
 
-		if applicationLayer := packet.ApplicationLayer(); applicationLayer != nil {
-			packetInfo["payload"] = string(applicationLayer.Payload())
-		}
+			for _, layer := range packet.Layers() {
+				packetInfo["layers"] = append(packetInfo["layers"].([]string), layer.LayerType().String())
+			}
 
-		packets = append(packets, packetInfo)
+			if appLayer := packet.ApplicationLayer(); appLayer != nil {
+				packetInfo["payload"] = string(appLayer.Payload())
+			} else {
+				// Include raw packet data if no application layer
+				packetInfo["raw_packet"] = fmt.Sprintf("%x", packet.Data())
+			}
+
+			if tcpLayer := packet.Layer(layers.LayerTypeTCP); tcpLayer != nil {
+				tcp, _ := tcpLayer.(*layers.TCP)
+				packetInfo["src_port"] = tcp.SrcPort
+				packetInfo["dst_port"] = tcp.DstPort
+			}
+
+			// Add the malicious packet to the list
+			maliciousPackets = append(maliciousPackets, packetInfo)
+		}
 	}
 
-	jsonData, err := json.MarshalIndent(packets, "", "  ")
+	// If no malicious packets are found, return an appropriate message
+	if len(maliciousPackets) == 0 {
+		return "", fmt.Errorf("No malicious packets detected in the PCAP file")
+	}
+
+	// Split the malicious packets into chunks
+	chunkSize := 10 // Adjust the chunk size as needed
+	chunks := splitData(maliciousPackets, chunkSize)
+
+	// Save each chunk to a separate file
+	for i, chunk := range chunks {
+		fileName := fmt.Sprintf("malicious_chunk_%d.json", i+1)
+		chunkData, err := json.MarshalIndent(chunk, "", "  ")
+		if err != nil {
+			return "", fmt.Errorf("error marshaling chunk %d: %v", i+1, err)
+		}
+
+		err = os.WriteFile(fileName, chunkData, 0644)
+		if err != nil {
+			return "", fmt.Errorf("error writing chunk %d to file: %v", i+1, err)
+		}
+		fmt.Printf("Saved malicious chunk %d to file: %s\n", i+1, fileName)
+	}
+
+	// Return the full JSON data of malicious packets as a string
+	fullData, err := json.MarshalIndent(maliciousPackets, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("error converting packets to JSON: %v", err)
+		return "", fmt.Errorf("error marshaling full data: %v", err)
 	}
 
-	return string(jsonData), nil
+	return string(fullData), nil
 }
 
 // Analyze the readable data using OpenAI API
-func analyzeWithOpenAI(data string, threats []string) string {
+func analyzeWithOpenAI(chunkData string, threats []string) string {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatalf("Error loading .env file: %v", err)
@@ -136,7 +223,7 @@ func analyzeWithOpenAI(data string, threats []string) string {
 	client := openai.NewClient(apiKey)
 	ctx := context.Background()
 
-	prompt := fmt.Sprintf("Analyze the following network traffic data and explain the detected threats (%s), their causes, and resolutions:\n\n%s", strings.Join(threats, ", "), data)
+	prompt := fmt.Sprintf("Analyze the following network traffic data and explain the detected threats (%s), their causes, and resolutions.:\n\n%s", strings.Join(threats, ", "), chunkData)
 
 	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: openai.GPT4, // Use GPT-4 for better analysis
@@ -158,6 +245,33 @@ func analyzeWithOpenAI(data string, threats []string) string {
 	}
 
 	return resp.Choices[0].Message.Content
+}
+
+func processChunksForAnalysis(threats []string) string {
+	chunkFiles, err := filepath.Glob("malicious_chunk_*.json") // Match all chunk files
+	if err != nil {
+		log.Fatalf("Error finding chunk files: %v", err)
+	}
+
+	var analysisResults []string
+
+	for _, file := range chunkFiles {
+		fmt.Printf("Processing file: %s\n", file)
+
+		// Read the content of the chunk file
+		chunkData, err := os.ReadFile(file)
+		if err != nil {
+			fmt.Printf("Error reading file %s: %v\n", file, err)
+			continue
+		}
+
+		// Analyze the chunk with OpenAI
+		analysis := analyzeWithOpenAI(string(chunkData), threats)
+		analysisResults = append(analysisResults, fmt.Sprintf("Analysis for %s:\n%s", file, analysis))
+	}
+
+	// Combine all analysis results into a single string
+	return strings.Join(analysisResults, "\n\n")
 }
 
 // Helper function to format the list of detected threats

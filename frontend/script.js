@@ -28,17 +28,16 @@ document.getElementById("uploadForm").addEventListener("submit", async (e) => {
       timeout: 60000,
     });
 
-    const data = await response.json();
-
-    if (response.ok) {
-      resultDiv.innerHTML = `<p style="color: green;">Upload successful! Result: ${data.result}</p>`;
-    } else {
-      resultDiv.innerHTML = `<p style="color: red;">Error: ${
-        data.error || "Upload failed"
-      }</p>`;
+    if (!response.ok) {
+      // Attempt to parse the error response from the server
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Unknown server error");
     }
+
+    const data = await response.json();
+    resultDiv.innerHTML = `<p style="color: green;">Upload successful! Result: ${data.result}</p>`;
   } catch (err) {
-    resultDiv.innerHTML =
-      '<p style="color: red;">Error: Unable to connect to server</p>';
+    resultDiv.innerHTML = `<p style="color: red;">Error is: ${err.message}</p>`;
+    console.error("Error details:", err);
   }
 });
