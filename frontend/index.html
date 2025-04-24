@@ -4,21 +4,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PCAP Uploader</title>
+    <title>PacketGuardian-LLM</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 
 <body>
+    <div class="video-header">
+        <video autoplay muted loop id="bg-video">
+            <source src="images/13506132_1920_1080_30fps.mp4" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+        <div class="header-overlay"></div>
+        <div class="header-content">
+            <h1 class="project-title">PacketGuardian-LLM</h1>
+            <p class="project-subtitle">Advanced Network Traffic Analysis with AI</p>
+        </div>
+    </div>
+
     <div class="container">
-        <h1>Welcome to PCAP Uploader</h1>
-        <p>Upload your .pcap file for analysis</p>
-        <form id="uploadForm">
-            <label for="pcapFile">Select a .pcap file:</label>
-            <input type="file" id="pcapFile" name="pcapFile" accept=".pcap" title="Upload a PCAP file" required>
-            <button type="submit">Upload</button>
-        </form>
+        <div class="upload-section">
+            <h2>Upload your PCAP file for analysis</h2>
+            <p>Our AI-powered system will scan for threats and provide detailed analysis</p>
+            <form id="uploadForm">
+                <div class="file-upload-container">
+                    <label for="pcapFile" class="file-upload-label">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <span>Choose a .pcap file</span>
+                    </label>
+                    <input type="file" id="pcapFile" name="pcapFile" accept=".pcap" title="Upload a PCAP file" required>
+                    <div id="file-name" class="file-name">No file selected</div>
+                </div>
+                <button type="submit" class="upload-btn">
+                    <i class="fas fa-search"></i> Analyze
+                </button>
+            </form>
+        </div>
         <div id="result" class="result"></div>
     </div>
+    <footer class="footer">
+        <p>&copy; 2025 PacketGuardian-LLM | Advanced Network Security Analysis</p>
+    </footer>
     <script src="script.js"></script>
 </body>
 
