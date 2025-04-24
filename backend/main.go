@@ -3,9 +3,10 @@ package main
 import (
 	"PacketGuardian-LLM/backend/handlers"
 	"fmt"
-	"github.com/rs/cors"
 	"log"
 	"net/http"
+
+	"github.com/rs/cors"
 )
 
 func main() {
@@ -13,6 +14,12 @@ func main() {
 
 	// Define the upload endpoint
 	mux.HandleFunc("/upload", handlers.UploadHandler)
+
+	// Add PDF report download endpoint
+	mux.HandleFunc("/download-report", handlers.DownloadReportHandler)
+
+	// Add progress updates endpoint
+	mux.HandleFunc("/progress", handlers.GetProgressHandler)
 
 	// Configure CORS
 	corsOptions := cors.New(cors.Options{

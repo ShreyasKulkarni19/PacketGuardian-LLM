@@ -10,5 +10,6 @@ require (
 
 require (
 	github.com/joho/godotenv v1.5.1 // indirect
+	github.com/jung-kurt/gofpdf v1.16.2 // indirect
 	golang.org/x/sys v0.0.0-20190412213103-97732733099d // indirect
 )

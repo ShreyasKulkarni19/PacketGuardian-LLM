@@ -71,6 +71,83 @@ func ProcessPCAP(pcapFile string) string {
 	return fmt.Sprintf("Processed %d packets, no threats detected", packetCount)
 }
 
+// ProcessPCAPWithUpdates processes the PCAP file and provides progress updates
+func ProcessPCAPWithUpdates(pcapFile string, analysisID string, updateCallback func(string, string)) string {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("Recovered from panic in ProcessPCAPWithUpdates: %v\n", r)
+			updateCallback(analysisID, fmt.Sprintf("Error: %v", r))
+		}
+	}()
+
+	if pcapFile == "" {
+		updateCallback(analysisID, "Error: PCAP file path is empty")
+		return "Error: PCAP file path is empty"
+	}
+
+	updateCallback(analysisID, "Opening PCAP file...")
+	// Open the pcap file
+	handle, err := pcap.OpenOffline(pcapFile)
+	if err != nil {
+		updateCallback(analysisID, fmt.Sprintf("Error opening PCAP file: %v", err))
+		return fmt.Sprintf("Error opening pcap file: %v", err)
+	}
+	defer handle.Close()
+
+	// Create a new packet source
+	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+
+	updateCallback(analysisID, "Starting packet analysis...")
+	// Initialize threat detection variables
+	var packetCount int
+	var detectedThreats []string // To store the types of threats detected
+
+	// First pass: count packets and detect threats
+	updateCallback(analysisID, "Scanning packets for threats...")
+	for packet := range packetSource.Packets() {
+		packetCount++
+
+		// Progress updates for large PCAP files
+		if packetCount%1000 == 0 {
+			updateCallback(analysisID, fmt.Sprintf("Processed %d packets...", packetCount))
+		}
+
+		if detectSQLInjection(packet) {
+			detectedThreats = append(detectedThreats, "SQL Injection")
+		}
+		if detectXSS(packet) {
+			detectedThreats = append(detectedThreats, "Cross-Site Scripting (XSS)")
+		}
+		if detectDoS(packet) {
+			detectedThreats = append(detectedThreats, "Denial of Service (DoS)")
+		}
+		if detectMalware(packet) {
+			detectedThreats = append(detectedThreats, "Malware")
+		}
+		if detectPhishing(packet) {
+			detectedThreats = append(detectedThreats, "Phishing")
+		}
+		if detectBruteForce(packet) {
+			detectedThreats = append(detectedThreats, "Brute Force Attack")
+		}
+	}
+
+	updateCallback(analysisID, fmt.Sprintf("Completed scanning %d packets", packetCount))
+
+	if len(detectedThreats) > 0 {
+		uniqueThreats := removeDuplicates(detectedThreats)
+		updateCallback(analysisID, fmt.Sprintf("Detected threats: %s", formatThreats(uniqueThreats)))
+
+		// Perform deeper analysis
+		updateCallback(analysisID, "Starting detailed threat analysis...")
+		analysis := analyzeWithUpdates(pcapFile, uniqueThreats, analysisID, updateCallback)
+		return fmt.Sprintf("Processed %d packets and detected threats: %s\n\nAnalysis:\n%s", packetCount, formatThreats(uniqueThreats), analysis)
+	}
+
+	updateCallback(analysisID, "No threats detected")
+	return fmt.Sprintf("Processed %d packets, no threats detected", packetCount)
+}
+
 func analyze(pcapFile string, threats []string) string {
 	readableData, err := convertPCAPToReadableFormat(pcapFile)
 	if err != nil {
@@ -84,6 +161,36 @@ func analyze(pcapFile string, threats []string) string {
 	// Include readableData and analysisResults in the response
 	return fmt.Sprintf("File uploaded and processing completed. Readable data:\n%s\n\nAnalysis Results:\n%s", readableData, analysisResults)
 }
+
+func analyzeWithUpdates(pcapFile string, threats []string, analysisID string, updateCallback func(string, string)) string {
+	updateCallback(analysisID, "Converting PCAP to analyzable format...")
+	readableData, err := convertPCAPToReadableFormat(pcapFile)
+	if err != nil {
+		updateCallback(analysisID, fmt.Sprintf("Error converting PCAP file: %v", err))
+		return fmt.Sprintf("Error converting PCAP file: %v", err)
+	}
+
+	updateCallback(analysisID, "PCAP conversion complete, identified malicious packets")
+
+	// Get the number of chunks
+	chunkFiles, err := filepath.Glob("malicious_chunk_*.json")
+	if err != nil {
+		updateCallback(analysisID, fmt.Sprintf("Error finding chunk files: %v", err))
+		return fmt.Sprintf("Error finding chunk files: %v", err)
+	}
+
+	updateCallback(analysisID, fmt.Sprintf("Split data into %d chunks for analysis", len(chunkFiles)))
+
+	// Process the saved chunks for analysis
+	updateCallback(analysisID, "Starting OpenAI analysis of malicious chunks...")
+	analysisResults := processChunksForAnalysisWithUpdates(threats, analysisID, updateCallback)
+
+	updateCallback(analysisID, "OpenAI analysis complete")
+
+	// Include readableData and analysisResults in the response
+	return fmt.Sprintf("File uploaded and processing completed. Readable data:\n%s\n\nAnalysis Results:\n%s", readableData, analysisResults)
+}
+
 func splitData(data []map[string]interface{}, chunkSize int) [][]map[string]interface{} {
 	var chunks [][]map[string]interface{}
 	for i := 0; i < len(data); i += chunkSize {
@@ -95,41 +202,6 @@ func splitData(data []map[string]interface{}, chunkSize int) [][]map[string]inte
 	}
 	return chunks
 }
-
-// func convertPCAPToReadableFormat(pcapFile string) (string, error) {
-// 	handle, err := pcap.OpenOffline(pcapFile)
-// 	if err != nil {
-// 		return "", fmt.Errorf("error opening pcap file: %v", err)
-// 	}
-// 	defer handle.Close()
-
-// 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
-// 	var packets []map[string]interface{}
-
-// 	for packet := range packetSource.Packets() {
-// 		packetInfo := map[string]interface{}{
-// 			"timestamp": packet.Metadata().Timestamp.String(),
-// 			"layers":    []string{},
-// 		}
-
-// 		for _, layer := range packet.Layers() {
-// 			packetInfo["layers"] = append(packetInfo["layers"].([]string), layer.LayerType().String())
-// 		}
-
-// 		if applicationLayer := packet.ApplicationLayer(); applicationLayer != nil {
-// 			packetInfo["payload"] = string(applicationLayer.Payload())
-// 		}
-
-// 		packets = append(packets, packetInfo)
-// 	}
-
-// 	jsonData, err := json.MarshalIndent(packets, "", "  ")
-// 	if err != nil {
-// 		return "", fmt.Errorf("error converting packets to JSON: %v", err)
-// 	}
-
-// 	return string(jsonData), nil
-// }
 
 func convertPCAPToReadableFormat(pcapFile string) (string, error) {
 	handle, err := pcap.OpenOffline(pcapFile)
@@ -268,6 +340,37 @@ func processChunksForAnalysis(threats []string) string {
 		// Analyze the chunk with OpenAI
 		analysis := analyzeWithOpenAI(string(chunkData), threats)
 		analysisResults = append(analysisResults, fmt.Sprintf("Analysis for %s:\n%s", file, analysis))
+	}
+
+	// Combine all analysis results into a single string
+	return strings.Join(analysisResults, "\n\n")
+}
+
+func processChunksForAnalysisWithUpdates(threats []string, analysisID string, updateCallback func(string, string)) string {
+	chunkFiles, err := filepath.Glob("malicious_chunk_*.json") // Match all chunk files
+	if err != nil {
+		updateCallback(analysisID, fmt.Sprintf("Error finding chunk files: %v", err))
+		return fmt.Sprintf("Error finding chunk files: %v", err)
+	}
+
+	var analysisResults []string
+
+	for i, file := range chunkFiles {
+		updateCallback(analysisID, fmt.Sprintf("Analyzing chunk %d of %d: %s", i+1, len(chunkFiles), file))
+
+		// Read the content of the chunk file
+		chunkData, err := os.ReadFile(file)
+		if err != nil {
+			updateCallback(analysisID, fmt.Sprintf("Error reading file %s: %v", file, err))
+			continue
+		}
+
+		updateCallback(analysisID, fmt.Sprintf("Sending chunk %d to OpenAI for analysis...", i+1))
+		// Analyze the chunk with OpenAI
+		analysis := analyzeWithOpenAI(string(chunkData), threats)
+		analysisResults = append(analysisResults, fmt.Sprintf("Analysis for %s:\n%s", file, analysis))
+
+		updateCallback(analysisID, fmt.Sprintf("Completed analysis of chunk %d", i+1))
 	}
 
 	// Combine all analysis results into a single string
